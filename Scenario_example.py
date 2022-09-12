@@ -8,7 +8,7 @@ Created on Mon Sep 12 11:26:07 2022
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
-
+# adjust path to the directory you are woking in...
 path=r'C:\Users\shmul\OneDrive\Documents\KIT_work\DATA_WORK\spyder_bks\swe'
 sys.path.append(path)
 import functions as F
@@ -33,7 +33,7 @@ ytyp=iter(Ytyp)
 for mn in [(0.2,0.82),(1.0,1.11),(1.7,1.45),(2.5,1.97)]:
     m=mn[0]
     n=mn[1]
-    y0=0.5
+    y0=0.5     # Hillslope height (m) at uppermost point
     nt=next(ytyp)
     YC[nt]=y0*(1-(xf/xl)**((1-m)/n+1))
     plt.plot(xf,YC[nt],label=mn)
@@ -41,8 +41,8 @@ plt.legend()
 
 # 2) define time domain
 
-tend=3600
-pend=0.2*tend
+tend=1800    #end of calculations in seconds
+pend=0.2*tend   #end of block-rainfall in seconds
 
 # 3) define rainfall input
 
@@ -51,10 +51,6 @@ tss=np.linspace(0,tend,num=tend+1)
 Pts=np.zeros(len(tss))
 Pts[0:int(len(tss)*pend)+1]=Peff
 
-# 4) define constants
-
-g=9.81
-beta=1
 #%% Run code
 
 c=r"C:\Users\shmul\\"
