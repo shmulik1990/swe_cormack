@@ -1,5 +1,11 @@
 #%% Functions
+import numpy as np
+import matplotlib.pyplot as plt
+import time
+
 # bed level functions
+
+
 def flin(x,zmax,L):
     y1=(zmax-zmax/L*x)
     return(y1)
@@ -33,8 +39,8 @@ def fElinnexp(Zmax,Epot,XHS,f):
 
 
 def SWE(oldrun,path_in,tname,Hname,Qname,name,x,hini,
-        tend,ts,tss,Pts,crstart,dtmax,safety,g,
-        hgp,n,hmin,beta,save,path_out,rst,plotQ):
+        tend,ts,tss,Pts,crstart,dtmax,
+        hgp,n,hmin,save,path_out,rst,plotQ):
     
     #variables
     ## oldrun == True or False (if a previous run has been saved and should be continued)
@@ -43,10 +49,8 @@ def SWE(oldrun,path_in,tname,Hname,Qname,name,x,hini,
     ## x== NUMPY ARRAY (horizontal resolution of numeric grid/ computation points)
     ## hini== FLOAT (initial water depth, everywhere equal)
     ## tend== FLOAT (End computation point in time in seconds)
-    ## ts== FLOAT (timestep for saving, in seconds)
+    ## ts== FLOAT (timestep for saving and plotting, in seconds)
     ## dtmax== FLOAT (maximum allowable timestep)
-    ## safety== FLOAT (value between 0 and 1)
-    ## g== FLOAT (gravity in m/s2)
     ## hgp== NUMPY ARRAY (vertical distribution of computational points)
     ## tss== NUMPY ARRAY (timestamps in seconds of rainfall time series)
     ## Pts== NUMPY ARRAY (rainfall intensities at tss in m/s)
@@ -54,18 +58,16 @@ def SWE(oldrun,path_in,tname,Hname,Qname,name,x,hini,
     ## n== FLOAT (Manning's n)
     ## hmin== FLOAT (minimum allowable water depth)
     ## beta== FLOAT (usually 1.0, vertical distribution of velocity)
+    beta=1
     ## save== LOGICAL (save results or not)
     ## path_out== STRING (Absolute path to directory to save)
-    ## plotQ== Logical (if true then Q at the lower end of the hillslope will be plotted every second)
+    ## plotQ== Logical (if true then Q at the lower end of the hillslope will be plotted every ts seconds)
+    
     
     dx=x[-1]/(len(x)-1)
     dh=abs((hgp[2:]-hgp[0:-2])/(2*dx))
     dl=dx/np.cos(np.arctan(dh/dx))
     dl=np.concatenate(([dl[0]],dl,[dl[-1]]))
-    Pmax=np.max(Pts)
-    Hnormmax=(n*Pmax*x/np.sqrt(dh/dx))**(3/5) #the largest hnorm 
-    H0norm=np.max(Hnormmax)
-    print(Hnormmax)
     
     Qout=[]
     tout=[]
@@ -73,12 +75,12 @@ def SWE(oldrun,path_in,tname,Hname,Qname,name,x,hini,
     
     ###### first we define functions which are called during the time marching:
     def dtcalc(dl,q,H,Crpreset):
-        dt=Crpreset*dl/np.nanmax(q/H+np.sqrt(g*H))
+        dt=Crpreset*dl/np.nanmax(q/H+np.sqrt(9.81*H))
         return(dt)
 
     def Fcalc(X1,X2):
         F1P=X2
-        F2P=beta*X2**2/X1+g*X1**2/2
+        F2P=beta*X2**2/X1+9.81*X1**2/2
         return(F1P,F2P)
 
     def Scalc(X1,X2,P,typ):
@@ -91,7 +93,7 @@ def SWE(oldrun,path_in,tname,Hname,Qname,name,x,hini,
         Ix=dhdx*X1
         Ie=n**2*X2**2/X1**(7/3)
         dI=Ix-Ie
-        S2P=g*(dI)
+        S2P=9.81*(dI)
         return(S1P,S2P)
 
     def TVD(x1,x2,Cr):
@@ -113,7 +115,7 @@ def SWE(oldrun,path_in,tname,Hname,Qname,name,x,hini,
         return(tvd)
 
     def fCr(H,q,dtoverdx):
-        Cr=(abs(q/H)+np.sqrt(g*H))*dtoverdx
+        Cr=(abs(q/H)+np.sqrt(9.81*H))*dtoverdx
         return(Cr)
 
     def fG(r,Cr):
@@ -130,7 +132,6 @@ def SWE(oldrun,path_in,tname,Hname,Qname,name,x,hini,
         tsave=np.load(path_in+tname+".npy",allow_pickle=True).item()    
         Hsave=np.load(path_in+Hname+".npy",allow_pickle=True).item()
         Qsave=np.load(path_in+Qname+".npy",allow_pickle=True).item()
-        tst=Hname.split("_",1)[1]
         x=np.load(path_in+"x_"+"n"+".npy",allow_pickle=True)
         hgp=np.load(path_in+"Z_"+"n"+".npy",allow_pickle=True)
         if rst<0:
@@ -157,19 +158,14 @@ def SWE(oldrun,path_in,tname,Hname,Qname,name,x,hini,
         
     # Time marching
     H=H0.copy()
-    #print(len(H))
     Q=Q0.copy()
     tmon0=time.time()
     while t<tend:
         tmonact=time.time()
         dtmon=tmonact-tmon0
         P=np.interp(t,tss,Pts)
-        if P>0:
-            #qini=-P*dx
-            qini=0
-        else:
-            qini=0
-            
+        qini=0 #no flow from upstream of first point
+        
         count=count+1
         #set boundary values at ghost points
         dH=(H[-1]-H[-2])
@@ -184,16 +180,6 @@ def SWE(oldrun,path_in,tname,Hname,Qname,name,x,hini,
         else:
             dt=dtorg
         
-        #if np.min(H)>H0norm*0.7:
-        #    dt=dtorg*safety
-        #if np.min(H)>H0norm*0.8:
-        #    dt=dtorg*safety*2
-        #if np.min(H)>H0norm*0.9:
-        #    dt=dtorg*safety*4
-        #if t>150:
-        #    dt=dtmax
-        #if t<20:
-        #    dt=dtmax
         
         dtoverdl=dt/dl
         dtoverdx=dt/dx
@@ -248,16 +234,12 @@ def SWE(oldrun,path_in,tname,Hname,Qname,name,x,hini,
         #Final value not incl. ghost points
         TVDX1=TVD(H,Q,Cr[1:-1])[0,:]
         TVDX2=TVD(H,Q,Cr[1:-1])[1,:]
-        if t>1040:
-            fac=0
-            fac=0
-        else:
-            fac=1
+
             
-        HF=(HP[1:-1]+HC[1:-1])/2#+fac*TVDX1#[1:-1]
-        QF=(QP[1:-1]+QC[1:-1])/2#+fac*TVDX2#[1:-1]
-        HF[2:-1]=HF[2:-1]+TVDX1[2:-1]*fac
-        QF[2:-1]=QF[2:-1]+TVDX2[2:-1]*fac
+        HF=(HP[1:-1]+HC[1:-1])/2
+        QF=(QP[1:-1]+QC[1:-1])/2
+        HF[2:-1]=HF[2:-1]+TVDX1[2:-1]
+        QF[2:-1]=QF[2:-1]+TVDX2[2:-1]
         
         HF[np.isnan(HF)]=hmin
         
@@ -278,11 +260,9 @@ def SWE(oldrun,path_in,tname,Hname,Qname,name,x,hini,
             tsave[countn]=t
             Qsave[countn]=QF
             Hsave[countn]=HF
-            #TVDX1save[countn]=TVDX1
-            #TVDX2save[countn]=TVDX2
             countn=countn+1
             told=t
-            #plt.plot(HF)
+
             if (plotQ):
                 Qout.append(QF[-1])
                 tout.append(t)
